@@ -11,11 +11,12 @@ jobs:
         run: |
           arduino-cli core update-index --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
           arduino-cli core install esp8266:esp8266@2.0.0 --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
-      - name: Run Compile
+      - name: Fix Folder Structure and Compile
         run: |
-          # Perintah ini akan mencari file .ino secara otomatis
-          SKETCH_PATH=$(find . -name "*.ino" | head -n 1)
-          arduino-cli compile --fqbn esp8266:esp8266:d1_mini "$SKETCH_PATH" --output-dir ./out
+          # Membuat folder agar sesuai dengan nama file .ino
+          mkdir -p GMpro
+          cp GMpro.ino GMpro/GMpro.ino
+          arduino-cli compile --fqbn esp8266:esp8266:d1_mini GMpro --output-dir ./out
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
