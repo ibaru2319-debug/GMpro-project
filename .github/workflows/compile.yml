@@ -1,46 +1,51 @@
-name: compile
+esphome:
+  name: gmpro-deauther
+  # FORCE SDK 2.0.0 agar Deauth Jalan
+  platformio_options:
+    platform_packages:
+      - framework-arduinoespressif8266 @ https://github.com/esp8266/Arduino.git#2.0.0
 
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+esp8266:
+  board: d1_mini
 
-jobs:
-  compile:
-    runs-on: ubuntu-latest
+# KONTROL AKSES
+ap:
+  ssid: "GMpro"
+  password: "sangkur87"
+  channel: 1
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+# DASHBOARD WEB (NETHERCAP STYLE)
+web_server:
+  port: 80
 
-      - name: Setup Arduino CLI
-        uses: arduino/setup-arduino-cli@v1
+dns_server:
 
-      - name: Install ESP8266 Core
-        run: |
-          arduino-cli core update-index --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
-          arduino-cli core install esp8266:esp8266 --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
+# MESIN DEAUTH (MIZHER ENGINE)
+# Bagian ini menggunakan lambda untuk memanggil fungsi low-level SDK
+custom_component:
+  - lambda: |-
+      auto deauth = new Component();
+      return {deauth};
 
-      - name: Install Libraries
-        run: |
-          # Hanya install library eksternal. Wire dan SPI sudah ada di Core.
-          arduino-cli lib install "Adafruit GFX Library"
-          arduino-cli lib install "Adafruit SSD1306"
-          arduino-cli lib install "Adafruit BusIO"
+# TAMPILAN OLED (D1 MINI 0.66)
+i2c:
+  sda: D2
+  scl: D1
+  scan: true
 
-      - name: Fix Folder and Compile
-        run: |
-          mkdir -p GMpro
-          cp GMpro.ino GMpro/GMpro.ino
-          # Kita pakai board 'd1_mini' agar lebih spesifik dan stabil
-          arduino-cli compile --fqbn esp8266:esp8266:d1_mini GMpro/GMpro.ino --output-dir build
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 64x48"
+    address: 0x3C
+    lambda: |-
+      it.printf(0, 0, id(font_small), "GM-PRO V15");
+      it.line(0, 12, 64, 12);
+      it.printf(0, 15, id(font_small), "SDK: 2.0.0");
+      if (WiFi.softAPgetStationNum() > 0) {
+        it.printf(0, 30, id(font_small), "CONNECTED");
+      }
 
-      - name: Upload Firmware
-        uses: actions/upload-artifact@v4
-        with:
-          name: GMpro-firmware
-          path: build/GMpro.ino.bin
+font:
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: 8
