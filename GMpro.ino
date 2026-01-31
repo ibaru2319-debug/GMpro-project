@@ -8,15 +8,13 @@ extern "C" {
   #include "user_interface.h"
 }
 
-// Config OLED & LED
 #define SCREEN_WIDTH 64
 #define SCREEN_HEIGHT 48
-#define LED_PIN 2 // LED bawaan Wemos D1 Mini
+#define LED_PIN 2 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 
-// State Variables
 bool isAttacking = false;
 String target_ssid = "";
 String logs = "";
@@ -43,14 +41,14 @@ void setup() {
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   drawSkull();
   
-  WiFi.setPhyMode(WIFI_PHY_MODE_11B);
   WiFi.mode(WIFI_AP_STA);
-  wifi_promiscuous_enable(1);
+  // PENGGANTI PHY MODE: Set daya ke maksimal 20.5 dBm
+  WiFi.setOutputPower(20.5); 
   
+  wifi_promiscuous_enable(1);
   WiFi.softAP(apSSID.c_str(), apPASS.c_str());
   dnsServer.start(53, "*", WiFi.softAPIP());
 
-  // --- WEB CONSOLE ---
   server.on("/", []() {
     String s = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'><style>";
     s += "body{background-color:#000;background-image:url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzA0MTAwMCI+PHBhdGggZD0iTTEyIDJjLTQuNDIgMC04IDMuNTgtOCA4IDAgMS42OS41MiAzLjI0IDEuNCA0LjUxTDUuMTUgMjEuNjFjLS4zOS4zOS0uMzkgMS4wMiAwIDEuNDEuMzkuMzkgMS4wMi4zOSAxLjQxIDBsMi4xLTIuMWMxLjI3Ljg4IDIuODIgMS40IDQuNTEgMS40IDQuNDIgMCA4LTMuNTggOC04czMtOC04LTh6bTAtMmM1LjUyIDAgMTAgNC40OCAxMCAxMHMtNC40OCAxMC0xMCAxMC0xMC00LjQ4LTEwLTEwIDQuNDgtMTAgMTAtMTB6bS0zIDExYTEuNSAxLjUgMCAxIDEgMC0zIDEuNSAxLjUgMCAwIDEgMCAzem02IDBhMS41IDEuNSAwIDEgMSAwLTMgMS41IDEuNSAwIDAgMSAwIDN6bS0zIDRjLTIuNCAwLTQuNS0xLjMxLTUuNjMtMy4yOSAxLjA3LjggMi40MiAxLjI5IDMuODggMS4yOSAxLjQ2IDAgMi44MS0uNDkgMy44OC0xLjI5QzE2LjUgMTMuNjkgMTQuNCAxNSAxMiAxNXoiLz48L3N2Zz4=');";
@@ -119,9 +117,8 @@ void loop() {
   dnsServer.processNextRequest();
   server.handleClient();
 
-  // Logika LED Blink
   unsigned long now = millis();
-  int interval = isAttacking ? 100 : 1000; // Cepat saat serang, lambat saat diam
+  int interval = isAttacking ? 100 : 1000; 
   if (now - lastBlink >= interval) {
     lastBlink = now;
     digitalWrite(LED_PIN, !digitalRead(LED_PIN));
