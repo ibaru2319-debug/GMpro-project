@@ -1,51 +1,56 @@
 esphome:
   name: gmpro-deauther
-  # FORCE SDK 2.0.0 agar Deauth Jalan
+  # MEMAKSA PENGGUNAAN SDK 2.0.0 (Arduino Core 2.0.0)
   platformio_options:
+    platform: espressif8266@1.5.0
     platform_packages:
       - framework-arduinoespressif8266 @ https://github.com/esp8266/Arduino.git#2.0.0
 
 esp8266:
   board: d1_mini
+  # Mengunci framework ke versi lama agar fungsi freedom packet tidak error
+  framework:
+    version: 2.0.0
 
-# KONTROL AKSES
+# PENGATURAN WIFI KONTROL
 ap:
   ssid: "GMpro"
   password: "sangkur87"
   channel: 1
 
-# DASHBOARD WEB (NETHERCAP STYLE)
+# WEB SERVER UNTUK DASHBOARD
 web_server:
   port: 80
 
+# DNS SERVER (Agar semua domain diarahkan ke IP Wemos)
 dns_server:
 
-# MESIN DEAUTH (MIZHER ENGINE)
-# Bagian ini menggunakan lambda untuk memanggil fungsi low-level SDK
-custom_component:
-  - lambda: |-
-      auto deauth = new Component();
-      return {deauth};
-
-# TAMPILAN OLED (D1 MINI 0.66)
+# AKTIFKAN I2C UNTUK OLED 0.66
 i2c:
   sda: D2
   scl: D1
   scan: true
 
+# TAMPILAN MONITOR OLED
 display:
   - platform: ssd1306_i2c
     model: "SSD1306 64x48"
     address: 0x3C
     lambda: |-
-      it.printf(0, 0, id(font_small), "GM-PRO V15");
-      it.line(0, 12, 64, 12);
-      it.printf(0, 15, id(font_small), "SDK: 2.0.0");
+      it.printf(0, 0, id(font_small), "GM-PRO");
+      it.line(0, 10, 64, 10);
+      it.printf(0, 14, id(font_small), "SDK: 2.0.0");
+      it.printf(0, 26, id(font_small), "MODE: MIZHER");
       if (WiFi.softAPgetStationNum() > 0) {
-        it.printf(0, 30, id(font_small), "CONNECTED");
+        it.printf(0, 38, id(font_small), "USER IN!");
       }
 
 font:
   - file: "gfonts://Roboto"
     id: font_small
     size: 8
+
+# SENSOR STATUS (OPSIONAL)
+sensor:
+  - platform: uptime
+    name: "Uptime"
