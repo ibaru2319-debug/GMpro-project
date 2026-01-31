@@ -1,27 +1,47 @@
-name: Build_GMpro_Ultimate
-on: [push]
+name: compile
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
 jobs:
   compile:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v1
-      - name: Install Core and Libs
+
+      - name: Install ESP8266 Core
         run: |
           arduino-cli core update-index --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
-          arduino-cli core install esp8266:esp8266@2.0.0 --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
+          arduino-cli core install esp8266:esp8266 --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
+
+      - name: Install Libraries
+        run: |
+          # Install library satu per satu untuk menghindari bentrok SPI
           arduino-cli lib install "Adafruit GFX Library"
           arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "Adafruit BusIO"
+          arduino-cli lib install "Wire"
 
       - name: Fix Folder and Compile
         run: |
+          # Membuat folder agar sesuai dengan nama file .ino
           mkdir -p GMpro
           cp GMpro.ino GMpro/GMpro.ino
-          arduino-cli compile --fqbn esp8266:esp8266:d1_mini GMpro --output-dir ./out
-          
+          arduino-cli compile --fqbn esp8266:esp8266:generic GMpro/GMpro.ino
+
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
-          name: GMpro-Ultimate-Firmware
-          path: ./out/*.bin
+          name: GMpro-firmware
+          path: /home/runner/work/GMpro-project/GMpro-project/GMpro/build/esp8266.esp8266.generic/GMpro.ino.bin
