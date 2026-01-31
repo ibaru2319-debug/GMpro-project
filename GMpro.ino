@@ -38,7 +38,7 @@ void setup() {
   Serial.begin(115200);
   
   // --- SIGNAL BOOST MAKSIMAL ---
-  WiFi.setOutputPower(20.5); 
+  // WiFi.setOutputPower(20.5); 
   
   WiFi.mode(WIFI_AP_STA);
   wifi_promiscuous_enable(1); 
