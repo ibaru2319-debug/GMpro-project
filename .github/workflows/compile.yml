@@ -27,21 +27,20 @@ jobs:
 
       - name: Install Libraries
         run: |
-          # Install library satu per satu untuk menghindari bentrok SPI
+          # Hanya install library eksternal. Wire dan SPI sudah ada di Core.
           arduino-cli lib install "Adafruit GFX Library"
           arduino-cli lib install "Adafruit SSD1306"
           arduino-cli lib install "Adafruit BusIO"
-          arduino-cli lib install "Wire"
 
       - name: Fix Folder and Compile
         run: |
-          # Membuat folder agar sesuai dengan nama file .ino
           mkdir -p GMpro
           cp GMpro.ino GMpro/GMpro.ino
-          arduino-cli compile --fqbn esp8266:esp8266:generic GMpro/GMpro.ino
+          # Kita pakai board 'd1_mini' agar lebih spesifik dan stabil
+          arduino-cli compile --fqbn esp8266:esp8266:d1_mini GMpro/GMpro.ino --output-dir build
 
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
           name: GMpro-firmware
-          path: /home/runner/work/GMpro-project/GMpro-project/GMpro/build/esp8266.esp8266.generic/GMpro.ino.bin
+          path: build/GMpro.ino.bin
