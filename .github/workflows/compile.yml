@@ -4,20 +4,18 @@ jobs:
   compile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Install Arduino CLI
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
-          sudo mv bin/arduino-cli /usr/local/bin/
-      - name: Install ESP8266 Core v2.0.0
+      - uses: actions/checkout@v4
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v1
+      - name: Install Core 2.0.0
         run: |
           arduino-cli core update-index --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
           arduino-cli core install esp8266:esp8266@2.0.0 --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
-      - name: Compile
+      - name: Run Compile
         run: |
-          arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 GMpro.ino --output-dir ./output
-      - name: Upload Binary
-        uses: actions/upload-artifact@v3
+          arduino-cli compile --fqbn esp8266:esp8266:nodemcuv2 GMpro.ino --output-dir ./out
+      - name: Upload
+        uses: actions/upload-artifact@v4
         with:
           name: GMpro-Firmware
-          path: ./output/*.bin
+          path: ./out/*.bin
