@@ -1,4 +1,4 @@
-name: Build_GMpro
+name: Build_GMpro_Ultimate
 on: [push]
 jobs:
   compile:
@@ -7,18 +7,26 @@ jobs:
       - uses: actions/checkout@v4
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v1
-      - name: Install Core 2.0.0
+      - name: Install Core and Libs
         run: |
+          # Install Board ESP8266 v2.0.0 agar Deauth Sakti
           arduino-cli core update-index --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
           arduino-cli core install esp8266:esp8266@2.0.0 --additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json
-      - name: Fix Folder Structure and Compile
+          
+          # Install Library untuk Layar OLED & Grafis
+          arduino-cli lib install "Adafruit SSD1306"
+          arduino-cli lib install "Adafruit GFX Library"
+          arduino-cli lib install "Adafruit BusIO"
+
+      - name: Fix Folder and Compile
         run: |
-          # Membuat folder agar sesuai dengan nama file .ino
+          # Membuat folder agar sesuai aturan Arduino CLI
           mkdir -p GMpro
           cp GMpro.ino GMpro/GMpro.ino
           arduino-cli compile --fqbn esp8266:esp8266:d1_mini GMpro --output-dir ./out
-      - name: Upload
+          
+      - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
-          name: GMpro-Firmware
+          name: GMpro-Ultimate-Firmware
           path: ./out/*.bin
